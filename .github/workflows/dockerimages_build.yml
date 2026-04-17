@@ -1,0 +1,63 @@
+name: Backend Docker CI/CD 
+on:
+  push:
+    branches:
+      - dev
+      - test
+      - main
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  # Asegúrate de reemplazar [nombre-de-tu-imagen] por el nombre real en minúsculas
+  IMAGE_NAME: ${{ github.repository_owner }}/api_prueba
+
+jobs:
+  build-and-push-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write 
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Verificar origen del código (Bloquear Push Directo)
+        if: github.ref == 'refs/heads/test' || github.ref == 'refs/heads/main'
+        run: |
+          COMMIT_MSG="${{ github.event.head_commit.message }}"
+          if [[ "$COMMIT_MSG" != *"Merge pull request"* && "$COMMIT_MSG" != *"Merge branch"* ]]; then
+            echo "❌ ERROR FATAL: Push directo detectado en rama protegida."
+            echo "El código solo debe llegar a test o main mediante un Pull Request."
+            exit 1
+          fi
+
+      - name: Iniciar sesión en GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extraer metadatos para Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # Configuración de etiquetas sin "latest"
+          tags: |
+            # Esto crea 'tu-imagen:dev', 'tu-imagen:test' o 'tu-imagen:main'
+            type=ref,event=branch
+            # Etiqueta opcional con el SHA corto para trazabilidad exacta
+            type=sha,format=short
+
+      - name: Construir y publicar imagen Docker
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          # Aquí se pasan las etiquetas generadas (dev, test, main, sha-xxxx)
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
