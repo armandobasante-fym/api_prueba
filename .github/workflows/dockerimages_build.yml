@@ -55,8 +55,8 @@ jobs:
       - name: Construir y publicar imagen Docker
         uses: docker/build-push-action@v5
         with:
-          context: ./backend
-          file: ./backend/Dockerfile
+          context: . 
+          file: Dockerfile
           push: true
           # Aquí se pasan las etiquetas generadas (dev, test, main, sha-xxxx)
           tags: ${{ steps.meta.outputs.tags }}
