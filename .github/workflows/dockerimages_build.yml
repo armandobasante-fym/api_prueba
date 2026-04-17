@@ -1,19 +1,29 @@
-name: Docker CI/CD 
+name: Backend Docker CI/CD (Multi-Environment)
+
 on:
+  # 1. Dev sigue funcionando con push directo normal
   push:
     branches:
       - dev
+      
+  # 2. Test y Main SOLO funcionan cuando un PR se aprueba y se une (merge)
+  pull_request:
+    types: [closed]
+    branches:
       - test
       - main
+      
   workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
-  # Asegúrate de reemplazar [nombre-de-tu-imagen] por el nombre real en minúsculas
-  IMAGE_NAME: ${{ github.repository_owner }}/api_prueba
+  # Asegúrate de cambiar esto por tu imagen real
+  IMAGE_NAME: ${{ github.repository_owner }}/[nombre-de-tu-imagen]
 
 jobs:
   build-and-push-image:
+    #  Si es un PR, solo se ejecuta si se hizo MERGE, no si se cerró cancelándolo
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -23,15 +33,24 @@ jobs:
       - name: Descargar repositorio
         uses: actions/checkout@v4
 
-      - name: Verificar origen del código (Bloquear Push Directo)
-        if: github.ref == 'refs/heads/test' || github.ref == 'refs/heads/main'
+      #  Extraer solo la rama destino para nombrar la imagen
+      - name: Determinar Etiqueta de Ambiente
+        id: info
         run: |
-          COMMIT_MSG="${{ github.event.head_commit.message }}"
-          if [[ "$COMMIT_MSG" != *"Merge pull request"* && "$COMMIT_MSG" != *"Merge branch"* ]]; then
-            echo "❌ ERROR FATAL: Push directo detectado en rama protegida."
-            echo "El código solo debe llegar a test o main mediante un Pull Request."
-            exit 1
+          TARGET_BRANCH=""
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            # Tomamos la rama a la que va el PR (test o main)
+            TARGET_BRANCH="${{ github.event.pull_request.base.ref }}"
+            echo "Merge a rama protegida detectado. Destino: $TARGET_BRANCH"
+          else
+            # Si es un push directo a dev
+            TARGET_BRANCH="dev"
+            echo "Push directo detectado. Destino: dev"
           fi
+
+          # Exportamos este valor para que Docker lo use
+          echo "branch=$TARGET_BRANCH" >> $GITHUB_OUTPUT
 
       - name: Iniciar sesión en GitHub Container Registry
         uses: docker/login-action@v3
@@ -45,19 +64,18 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          # Configuración de etiquetas sin "latest"
           tags: |
-            # Esto crea 'tu-imagen:dev', 'tu-imagen:test' o 'tu-imagen:main'
-            type=ref,event=branch
-            # Etiqueta opcional con el SHA corto para trazabilidad exacta
+            # 1. Etiqueta con el nombre de la rama (dev, test o main)
+            type=raw,value=${{ steps.info.outputs.branch }}
+            
+            # 2. Hash del commit para trazabilidad
             type=sha,format=short
 
       - name: Construir y publicar imagen Docker
         uses: docker/build-push-action@v5
         with:
-          context: . 
-          file: Dockerfile
+          context: .
+          file: ./Dockerfile
           push: true
-          # Aquí se pasan las etiquetas generadas (dev, test, main, sha-xxxx)
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
