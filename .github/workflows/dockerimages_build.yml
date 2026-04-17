@@ -17,8 +17,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  # Asegúrate de cambiar esto por tu imagen real
-  IMAGE_NAME: ${{ github.repository_owner }}/[nombre-de-tu-imagen]
+  IMAGE_NAME: ${{ github.repository_owner }}/api_prueba
 
 jobs:
   build-and-push-image:
